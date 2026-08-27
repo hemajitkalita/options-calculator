@@ -5,13 +5,17 @@ html<!DOCTYPE html>
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>Expected Option Payoff Calculator</title>
+    <!-- Modern 2026 Stlite CSS Package -->
     <link rel="stylesheet" href="https://jsdelivr.net" />
   </head>
   <body>
     <div id="root"></div>
-    <script src="https://jsdelivr.net"></script>
-    <script>
-      stlite.mount({
+    
+    <!-- Modern Module Loading System for Mac and Modern Web Browsers -->
+    <script type="module">
+      import { mount } from "https://jsdelivr.net";
+
+      mount({
         requirements: ["plotly", "numpy", "scipy"],
         entrypoint: "app.py",
         files: {
@@ -89,8 +93,9 @@ fig.update_layout(xaxis=dict(title='Asset Price'), yaxis=dict(title='P&L'), yaxi
 st.plotly_chart(fig, use_container_width=True)
 st.dataframe(st.session_state.legs)
 `
-        }
-      });
+        },
+        disableDocumentStyles: true
+      }, document.getElementById("root"));
     </script>
   </body>
 </html>
