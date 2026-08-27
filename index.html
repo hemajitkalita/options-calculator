@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>Expected Option Payoff Calculator</title>
+    <!-- Loads the Streamlit-in-browser micro-engine -->
+    <link rel="stylesheet" href="https://jsdelivr.net" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://jsdelivr.net"></script>
+    <script>
+      stlite.mount({
+        requirements: ["plotly", "numpy", "scipy"],
+        entrypoint: "app.py",
+        files: {
+          "app.py": `
+import streamlit as st
+import numpy as np
+import plotly.graph_objects as go
+from scipy.stats import norm
+
+st.set_page_config(page_title="Expected Option Payoff Calculator", layout="wide")
+st.title("📊 Expected Option Payoff Calculator")
+
+if "legs" not in st.session_state:
+    st.session_state.legs = [{"type": "Call", "action": "Buy", "strike": 100.0, "premium": 1.00, "quantity": 1}]
+
+st.sidebar.header("🎯 Strategy Builder")
+if st.sidebar.button("➕ Add Leg"):
+    st.session_state.legs.append({"type": "Call", "action": "Buy", "strike": 100.0, "premium": 1.00, "quantity": 1})
+
+for i, leg in enumerate(st.session_state.legs):
+    with st.sidebar.expander(f"Leg {i+1}: {leg['action']} {leg['type']}", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            leg["type"] = st.selectbox("Type", ["Call", "Put"], key=f"type_{i}", index=0 if leg["type"] == "Call" else 1)
+            leg["strike"] = st.number_input("Strike Price ($)", min_value=0.0, value=float(leg["strike"]), step=1.0, key=f"strike_{i}")
+        with col2:
+            leg["action"] = st.selectbox("Action", ["Buy", "Sell"], key=f"action_{i}", index=0 if leg["action"] == "Buy" else 1)
+            leg["premium"] = st.number_input("Premium ($)", min_value=0.0, value=float(leg["premium"]), step=0.1, key=f"premium_{i}")
+        leg["quantity"] = st.number_input("Quantity", min_value=1, value=int(leg["quantity"]), step=1, key=f"qty_{i}")
+
+st.subheader("🎲 Underlying Asset Settings")
+col1, col2 = st.columns(2)
+with col1: current_price = st.number_input("Current Asset Price ($)", min_value=0.01, value=100.0, step=1.0)
+with col2: std_dev = st.number_input("Expected Standard Deviation ($)", min_value=0.01, value=10.0, step=1.0)
+
+x_min, x_max = max(0.01, current_price - 4 * std_dev), current_price + 4 * std_dev
+stock_prices = np.linspace(x_min, x_max, 1000)
+total_pnl, net_premium, has_unprotected_short_call = np.zeros_like(stock_prices), 0.0, False
+
+for leg in st.session_state.legs:
+    mult, qty, strike, premium = (1 if leg["action"] == "Buy" else -1), leg["quantity"], leg["strike"], leg["premium"]
+    payoff = np.maximum(stock_prices - strike, 0) if leg["type"] == "Call" else np.maximum(strike - stock_prices, 0)
+    if leg["type"] == "Call" and leg["action"] == "Sell": has_unprotected_short_call = True
+    total_pnl += (payoff - premium) * mult * qty
+    net_premium += premium * mult * qty
+
+long_call_strikes = [l["strike"] for l in st.session_state.legs if l["type"] == "Call" and l["action"] == "Buy"]
+short_call_strikes = [l["strike"] for l in st.session_state.legs if l["type"] == "Call" and l["action"] == "Sell"]
+if short_call_strikes and long_call_strikes and max(long_call_strikes) >= min(short_call_strikes): has_unprotected_short_call = False
+
+pdf = (1 / (std_dev * np.sqrt(2 * np.pi))) * np.exp(-((stock_prices - current_price) ** 2) / (2 * std_dev ** 2))
+pdf /= np.sum(pdf)
+expected_pnl, probability_of_profit = np.sum(total_pnl * pdf), np.sum(pdf[total_pnl > 0]) * 100
+
+if has_unprotected_short_call:
+    max_loss_display = "Infinity (∞)"
+else:
+    worst_case_at_zero = sum(( (leg["strike"] if leg["type"] == "Put" else 0.0) - leg["premium"] ) * (1 if leg["action"] == "Buy" else -1) * leg["quantity"] for leg in st.session_state.legs)
+    absolute_min_pnl = min(np.min(total_pnl), worst_case_at_zero)
+    max_loss_display = f"\\\\${abs(absolute_min_pnl):.2f}" if absolute_min_pnl < 0 else "\\\\$0.00"
+
+st.markdown("---")
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Expected Payoff (EV / share)", f"\\\\${expected_pnl:.2f}")
+k2.metric("Probability of Profit (PoP)", f"{probability_of_profit:.1f}%")
+k3.metric("Max Profit (per share)", f"\\\\${np.max(total_pnl):.2f}")
+k4.metric("Max Loss (per share)", max_loss_display)
+
+st.markdown("---")
+st.subheader("📈 Payoff Diagram & Price Probability Distribution")
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=stock_prices, y=total_pnl, mode='lines', name='Strategy P&L', line=dict(color='chartreuse', width=3), yaxis='y1'))
+fig.add_trace(go.Scatter(x=stock_prices, y=pdf * 100, mode='lines', name='Probability', fill='tozeroy', line=dict(color='rgba(0,150,255,0.4)', width=1), yaxis='y2'))
+fig.update_layout(xaxis=dict(title='Asset Price ($)'), yaxis=dict(title='P&L ($)'), yaxis2=dict(overlaying='y', side='right', showgrid=False), template="plotly_dark", hovermode="x unified")
+st.plotly_chart(fig, use_container_width=True)
+st.dataframe(st.session_state.legs)
+`
+        }
+      });
+    </script>
+  </body>
+</html>
