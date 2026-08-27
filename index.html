@@ -5,18 +5,18 @@ html<!DOCTYPE html>
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>Expected Option Payoff Calculator</title>
-    <!-- Core UI CSS stylesheet for the Stlite player -->
+    <!-- Core UI setup file -->
     <link rel="stylesheet" href="https://jsdelivr.net" />
   </head>
   <body>
-    <!-- The physical mounting window container -->
+    <!-- The physical view pane -->
     <div id="root"></div>
 
     <script type="module">
-      // Import the core mount controller natively via browser modules (Perfect for macOS)
-      import { mount } from "https://jsdelivr.net";
+      import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.85.1/build/stlite.js";
 
       mount({
+        // Declaring packages inside the runtime list fixes Safari/Chrome stalls
         requirements: ["plotly", "numpy", "scipy"],
         entrypoint: "app.py",
         files: {
@@ -76,13 +76,13 @@ if has_unprotected_short_call:
 else:
     worst_case_at_zero = sum(( (leg["strike"] if leg["type"] == "Put" else 0.0) - leg["premium"] ) * (1 if leg["action"] == "Buy" else -1) * leg["quantity"] for leg in st.session_state.legs)
     absolute_min_pnl = min(np.min(total_pnl), worst_case_at_zero)
-    max_loss_display = f"\${abs(absolute_min_pnl):.2f}" if absolute_min_pnl < 0 else "\$0.00"
+    max_loss_display = "{:.2f}".format(abs(absolute_min_pnl)) if absolute_min_pnl < 0 else "0.00"
 
 st.markdown("---")
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("Expected Payoff (EV / share)", f"\${expected_pnl:.2f}")
-k2.metric("Probability of Profit (PoP)", f"{probability_of_profit:.1f}%")
-k3.metric("Max Profit (per share)", f"\${np.max(total_pnl):.2f}")
+k1.metric("Expected Payoff (EV / share)", "{:.2f}".format(expected_pnl))
+k2.metric("Probability of Profit (PoP)", "{:.1f}%".format(probability_of_profit))
+k3.metric("Max Profit (per share)", "{:.2f}".format(np.max(total_pnl)))
 k4.metric("Max Loss (per share)", max_loss_display)
 
 st.markdown("---")
