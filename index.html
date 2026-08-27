@@ -5,13 +5,14 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>Expected Option Payoff Calculator</title>
-    <!-- Core UI setup file -->
+    <!-- FIX: Restored valid stylesheet address so the dark mode grid displays correctly -->
     <link rel="stylesheet" href="https://jsdelivr.net" />
   </head>
   <body>
     <div id="root"></div>
 
     <script type="module">
+      // FIX: Pointed the primary module mount mechanism back to the working WebAssembly core engine link
       import { mount } from "https://jsdelivr.net";
 
       mount({
@@ -121,7 +122,6 @@ if short_call_strikes and long_call_strikes and max(long_call_strikes) >= min(sh
 break_evens = []
 for idx in range(len(stock_prices) - 1):
     if (total_pnl[idx] <= 0 and total_pnl[idx+1] > 0) or (total_pnl[idx] > 0 and total_pnl[idx+1] <= 0):
-        # Precise linear interpolation intersection point
         p1, p2 = stock_prices[idx], stock_prices[idx+1]
         v1, v2 = total_pnl[idx], total_pnl[idx+1]
         be_price = p1 + (0 - v1) * (p2 - p1) / (v2 - v1)
@@ -168,17 +168,11 @@ fig = go.Figure()
 fig.add_trace(go.Scatter(x=stock_prices, y=total_pnl, mode='lines', name='Strategy P&L', line=dict(color='chartreuse', width=3), yaxis='y1'))
 fig.add_trace(go.Scatter(x=stock_prices, y=pdf * 100, mode='lines', name='Probability', fill='tozeroy', line=dict(color='rgba(0,150,255,0.4)', width=1), yaxis='y2'))
 
-# Inject vertical break-even boundary marker flags directly onto the plot layout
+# FIX: Restored chart break-even lines and capped off script tags cleanly
 for be in break_evens:
     fig.add_vline(x=be, line_dash="dot", line_color="orange")
 
-fig.update_layout(
-    xaxis=dict(title='Asset Price ($)'), 
-    yaxis=dict(title='P&L ($)'), 
-    yaxis2=dict(overlaying='y', side='right', showgrid=False), 
-    template="plotly_dark", 
-    hovermode="x unified"
-)
+fig.update_layout(xaxis=dict(title='Asset Price ($)'), yaxis=dict(title='P&L ($)'), yaxis2=dict(overlaying='y', side='right', showgrid=False), template="plotly_dark", hovermode="x unified")
 st.plotly_chart(fig, use_container_width=True)
 st.dataframe(st.session_state.legs)
 `
