@@ -9,14 +9,12 @@
     <link rel="stylesheet" href="https://jsdelivr.net" />
   </head>
   <body>
-    <!-- The physical view pane -->
     <div id="root"></div>
 
     <script type="module">
-      import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.85.1/build/stlite.js";
+      import { mount } from "https://jsdelivr.net";
 
       mount({
-        // Declaring packages inside the runtime list fixes Safari/Chrome stalls
         requirements: ["plotly", "numpy", "scipy"],
         entrypoint: "app.py",
         files: {
@@ -29,13 +27,57 @@ from scipy.stats import norm
 st.set_page_config(page_title="Expected Option Payoff Calculator", layout="wide")
 st.title("📊 Expected Option Payoff Calculator")
 
+# Initialize session state for options legs
 if "legs" not in st.session_state:
     st.session_state.legs = [{"type": "Call", "action": "Buy", "strike": 100.0, "premium": 1.00, "quantity": 1}]
 
-st.sidebar.header("🎯 Strategy Builder")
-if st.sidebar.button("➕ Add Leg"):
+# -----------------------------------------------------------------------------
+# Sidebar: Strategy Presets & Builder
+# -----------------------------------------------------------------------------
+st.sidebar.header("🎯 Strategy Presets")
+
+preset_selection = st.sidebar.selectbox(
+    "Choose a Template",
+    ["Custom", "Bull Call Spread", "Bear Put Spread", "Straddle", "Iron Condor"]
+)
+
+# Handle Template Loading
+if preset_selection == "Bull Call Spread":
+    st.session_state.legs = [
+        {"type": "Call", "action": "Buy", "strike": 95.0, "premium": 3.50, "quantity": 1},
+        {"type": "Call", "action": "Sell", "strike": 105.0, "premium": 1.20, "quantity": 1}
+    ]
+elif preset_selection == "Bear Put Spread":
+    st.session_state.legs = [
+        {"type": "Put", "action": "Buy", "strike": 105.0, "premium": 3.80, "quantity": 1},
+        {"type": "Put", "action": "Sell", "strike": 95.0, "premium": 1.40, "quantity": 1}
+    ]
+elif preset_selection == "Straddle":
+    st.session_state.legs = [
+        {"type": "Call", "action": "Buy", "strike": 100.0, "premium": 2.50, "quantity": 1},
+        {"type": "Put", "action": "Buy", "strike": 100.0, "premium": 2.10, "quantity": 1}
+    ]
+elif preset_selection == "Iron Condor":
+    st.session_state.legs = [
+        {"type": "Put", "action": "Buy", "strike": 85.0, "premium": 0.50, "quantity": 1},
+        {"type": "Put", "action": "Sell", "strike": 90.0, "premium": 1.50, "quantity": 1},
+        {"type": "Call", "action": "Sell", "strike": 110.0, "premium": 1.60, "quantity": 1},
+        {"type": "Call", "action": "Buy", "strike": 115.0, "premium": 0.60, "quantity": 1}
+    ]
+
+st.sidebar.markdown("---")
+st.sidebar.header("🛠️ Custom Modifier")
+
+def add_leg():
     st.session_state.legs.append({"type": "Call", "action": "Buy", "strike": 100.0, "premium": 1.00, "quantity": 1})
 
+def remove_leg(index):
+    st.session_state.legs.pop(index)
+
+if st.sidebar.button("➕ Add Custom Leg"):
+    add_leg()
+
+# Render each leg in the sidebar with modifiers
 for i, leg in enumerate(st.session_state.legs):
     with st.sidebar.expander(f"Leg {i+1}: {leg['action']} {leg['type']}", expanded=True):
         col1, col2 = st.columns(2)
@@ -46,30 +88,50 @@ for i, leg in enumerate(st.session_state.legs):
             leg["action"] = st.selectbox("Action", ["Buy", "Sell"], key=f"action_{i}", index=0 if leg["action"] == "Buy" else 1)
             leg["premium"] = st.number_input("Premium ($)", min_value=0.0, value=float(leg["premium"]), step=0.1, key=f"premium_{i}")
         leg["quantity"] = st.number_input("Quantity", min_value=1, value=int(leg["quantity"]), step=1, key=f"qty_{i}")
+        
+        if len(st.session_state.legs) > 1:
+            st.button("🗑️ Remove Leg", key=f"remove_{i}", on_click=remove_leg, args=(i,))
 
+# -----------------------------------------------------------------------------
+# Main Panel: Calculations & Core Mathematical Engine
+# -----------------------------------------------------------------------------
 st.subheader("🎲 Underlying Asset Settings")
 col1, col2 = st.columns(2)
 with col1: current_price = st.number_input("Current Asset Price ($)", min_value=0.01, value=100.0, step=1.0)
 with col2: std_dev = st.number_input("Expected Standard Deviation ($)", min_value=0.01, value=10.0, step=1.0)
 
-x_min, x_max = max(0.01, current_price - 4 * std_dev), current_price + 4 * std_dev
-stock_prices = np.linspace(x_min, x_max, 1000)
-total_pnl, net_premium, has_unprotected_short_call = np.zeros_like(stock_prices), 0.0, False
+# Higher resolution price evaluation array to pin break-even thresholds exactly
+x_min, x_max = max(0.01, current_price - 5 * std_dev), current_price + 5 * std_dev
+stock_prices = np.linspace(x_min, x_max, 2000)
+total_pnl = np.zeros_like(stock_prices)
+
+has_unprotected_short_call = False
 
 for leg in st.session_state.legs:
     mult, qty, strike, premium = (1 if leg["action"] == "Buy" else -1), leg["quantity"], leg["strike"], leg["premium"]
     payoff = np.maximum(stock_prices - strike, 0) if leg["type"] == "Call" else np.maximum(strike - stock_prices, 0)
     if leg["type"] == "Call" and leg["action"] == "Sell": has_unprotected_short_call = True
     total_pnl += (payoff - premium) * mult * qty
-    net_premium += premium * mult * qty
 
 long_call_strikes = [l["strike"] for l in st.session_state.legs if l["type"] == "Call" and l["action"] == "Buy"]
 short_call_strikes = [l["strike"] for l in st.session_state.legs if l["type"] == "Call" and l["action"] == "Sell"]
 if short_call_strikes and long_call_strikes and max(long_call_strikes) >= min(short_call_strikes): has_unprotected_short_call = False
 
+# Break-Even Extraction Mathematics
+break_evens = []
+for idx in range(len(stock_prices) - 1):
+    if (total_pnl[idx] <= 0 and total_pnl[idx+1] > 0) or (total_pnl[idx] > 0 and total_pnl[idx+1] <= 0):
+        # Precise linear interpolation intersection point
+        p1, p2 = stock_prices[idx], stock_prices[idx+1]
+        v1, v2 = total_pnl[idx], total_pnl[idx+1]
+        be_price = p1 + (0 - v1) * (p2 - p1) / (v2 - v1)
+        break_evens.append(be_price)
+
+# Symmetrical Normal Probability Curve Density Integration
 pdf = (1 / (std_dev * np.sqrt(2 * np.pi))) * np.exp(-((stock_prices - current_price) ** 2) / (2 * std_dev ** 2))
 pdf /= np.sum(pdf)
-expected_pnl, probability_of_profit = np.sum(total_pnl * pdf), np.sum(pdf[total_pnl > 0]) * 100
+expected_pnl = np.sum(total_pnl * pdf)
+probability_of_profit = np.sum(pdf[total_pnl > 0]) * 100
 
 if has_unprotected_short_call:
     max_loss_display = "Infinity (∞)"
@@ -78,6 +140,7 @@ else:
     absolute_min_pnl = min(np.min(total_pnl), worst_case_at_zero)
     max_loss_display = "{:.2f}".format(abs(absolute_min_pnl)) if absolute_min_pnl < 0 else "0.00"
 
+# Render Summary KPI Cards
 st.markdown("---")
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Expected Payoff (EV / share)", "{:.2f}".format(expected_pnl))
@@ -85,12 +148,37 @@ k2.metric("Probability of Profit (PoP)", "{:.1f}%".format(probability_of_profit)
 k3.metric("Max Profit (per share)", "{:.2f}".format(np.max(total_pnl)))
 k4.metric("Max Loss (per share)", max_loss_display)
 
+# Break-Even Display Sub-Box
+if break_evens:
+    be_strings = [f"${be:.2f}" for be in break_evens]
+    st.info(f"👉 **Break-Even Prices (per share):** {', '.join(be_strings)}")
+else:
+    if np.all(total_pnl > 0):
+        st.success("👉 **Break-Even Prices:** None (Strategy is always profitable in this price range!)")
+    else:
+        st.error("👉 **Break-Even Prices:** None (Strategy is always at a loss in this price range!)")
+
+# -----------------------------------------------------------------------------
+# Chart Visualisation Layer
+# -----------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📈 Payoff Diagram & Price Probability Distribution")
 fig = go.Figure()
+
 fig.add_trace(go.Scatter(x=stock_prices, y=total_pnl, mode='lines', name='Strategy P&L', line=dict(color='chartreuse', width=3), yaxis='y1'))
 fig.add_trace(go.Scatter(x=stock_prices, y=pdf * 100, mode='lines', name='Probability', fill='tozeroy', line=dict(color='rgba(0,150,255,0.4)', width=1), yaxis='y2'))
-fig.update_layout(xaxis=dict(title='Asset Price ($)'), yaxis=dict(title='P&L ($)'), yaxis2=dict(overlaying='y', side='right', showgrid=False), template="plotly_dark", hovermode="x unified")
+
+# Inject vertical break-even boundary marker flags directly onto the plot layout
+for be in break_evens:
+    fig.add_vline(x=be, line_dash="dot", line_color="orange")
+
+fig.update_layout(
+    xaxis=dict(title='Asset Price ($)'), 
+    yaxis=dict(title='P&L ($)'), 
+    yaxis2=dict(overlaying='y', side='right', showgrid=False), 
+    template="plotly_dark", 
+    hovermode="x unified"
+)
 st.plotly_chart(fig, use_container_width=True)
 st.dataframe(st.session_state.legs)
 `
